@@ -1,0 +1,7 @@
+# Brand Voice Examples
+# Paste real copy written by the team below — PDPs, social posts, email copy, anything.
+# The more examples, the better Claude will match the style.
+# Lines starting with # are ignored.
+# ─────────────────────────────────────────────────────────────────────────────
+
+[PASTE EXAMPLE COPY HERE]
