@@ -87,7 +87,7 @@ def get_pinecone_index():
     load_env()
     api_key = os.environ.get("PINECONE_API_KEY", "")
     if not api_key:
-        raise ValueError("PINECONE_API_KEY not set in .env")
+        raise ValueError("PINECONE_API_KEY is not set. Add it to Railway's environment variables.")
     pc = Pinecone(api_key=api_key)
     return pc.Index(INDEX_NAME)
 
@@ -96,7 +96,7 @@ def get_anthropic_client():
     load_env()
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY not set in .env")
+        raise ValueError("ANTHROPIC_API_KEY is not set. Add it to Railway's environment variables.")
     return anthropic.Anthropic(api_key=api_key)
 
 

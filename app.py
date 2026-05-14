@@ -104,14 +104,17 @@ load_env()
 
 @st.cache_resource(show_spinner="Loading CLIP model...")
 def get_clip():
+    load_env()
     return load_clip_model()
 
 @st.cache_resource(show_spinner="Connecting to Pinecone...")
 def get_index():
+    load_env()
     return get_pinecone_index()
 
 @st.cache_resource
 def get_claude():
+    load_env()
     return get_anthropic_client()
 
 clip_model, clip_processor = get_clip()
