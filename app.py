@@ -117,6 +117,12 @@ def get_claude():
     load_env()
     return get_anthropic_client()
 
+import os as _os
+_pinecone_key = _os.environ.get("PINECONE_API_KEY", "NOT SET")
+_anthropic_key = _os.environ.get("ANTHROPIC_API_KEY", "NOT SET")
+st.sidebar.write(f"PINECONE_API_KEY: {'✓ set' if _pinecone_key != 'NOT SET' else '✗ missing'}")
+st.sidebar.write(f"ANTHROPIC_API_KEY: {'✓ set' if _anthropic_key != 'NOT SET' else '✗ missing'}")
+
 clip_model, clip_processor = get_clip()
 index = get_index()
 claude_client = get_claude()
