@@ -2,9 +2,10 @@ anthropic==0.84.0
 pinecone==7.3.0
 transformers==4.57.6
 python-docx==1.2.0
-streamlit==1.50.0
-pandas==2.3.3
 Pillow==11.3.0
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-multipart==0.0.12
 
 # CPU-only torch — smaller build, sufficient for CLIP text embeddings
 --extra-index-url https://download.pytorch.org/whl/cpu

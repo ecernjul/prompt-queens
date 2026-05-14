@@ -1,0 +1,102 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: 10px 18px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  letter-spacing: 0.01em;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+/* Variants ------------------------------------------------------------ */
+
+.primary {
+  background: var(--color-brand-primary);
+  color: var(--color-text-inverse);
+  border-color: var(--color-brand-primary);
+}
+.primary:not(:disabled):hover {
+  background: var(--color-brand-primary-hover);
+  border-color: var(--color-brand-primary-hover);
+}
+
+/* Dark text on the warm accent keeps the button readable (passes AA).
+ * White on the accent fails AA, so we use the brand primary for label. */
+.accent {
+  background: var(--color-brand-accent);
+  color: var(--color-brand-primary);
+  border-color: var(--color-brand-accent);
+}
+.accent:not(:disabled):hover {
+  background: var(--color-brand-accent-hover);
+  border-color: var(--color-brand-accent-hover);
+}
+
+.secondary {
+  background: var(--color-bg-raised);
+  color: var(--color-text);
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+.secondary:not(:disabled):hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-bg-subtle);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--color-text-muted);
+  border-color: transparent;
+  padding: 8px 12px;
+}
+.ghost:not(:disabled):hover {
+  color: var(--color-text);
+  background: var(--color-bg-subtle);
+}
+
+/* Sizes --------------------------------------------------------------- */
+
+.sm {
+  padding: 6px 12px;
+  font-size: var(--text-xs);
+  border-radius: var(--radius-sm);
+}
+
+.lg {
+  padding: 12px 22px;
+  font-size: var(--text-base);
+}
+
+/* Spinner slot when loading ------------------------------------------ */
+
+.loader {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: app-spin 0.75s linear infinite;
+  opacity: 0.85;
+}

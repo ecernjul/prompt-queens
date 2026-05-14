@@ -1,0 +1,37 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.skipLink {
+  position: absolute;
+  top: -100%;
+  left: var(--space-4);
+  background: var(--color-brand-primary);
+  color: var(--color-text-inverse);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  z-index: 9999;
+  text-decoration: none;
+}
+
+.skipLink:focus {
+  top: var(--space-2);
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.main {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-6);
+  outline: none;
+}
