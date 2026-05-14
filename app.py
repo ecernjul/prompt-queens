@@ -3,6 +3,7 @@ Prompt Queens Content Generator — Streamlit UI
 """
 
 import io
+import os
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -98,9 +99,44 @@ h3 { color: #333; font-size: 1rem; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Cached resources ──────────────────────────────────────────────────────────
+# ── Auth ─────────────────────────────────────────────────────────────────────
 
 load_env()
+
+APP_USERNAME = os.environ.get("APP_USERNAME", "admin")
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+
+def check_login():
+    if st.session_state.get("authenticated"):
+        return True
+
+    st.markdown("""
+    <div style="max-width:360px;margin:80px auto;padding:2rem;background:#fff;
+    border-radius:14px;box-shadow:0 2px 16px rgba(0,0,0,0.1);text-align:center;">
+    <div style="font-size:2.5rem;margin-bottom:0.5rem;">👑</div>
+    <h2 style="color:#1F3A5F;margin-bottom:1.5rem;font-size:1.3rem;">Prompt Queens</h2>
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.form("login_form"):
+        st.text_input("Username", key="login_username")
+        st.text_input("Password", type="password", key="login_password")
+        submitted = st.form_submit_button("Sign in", use_container_width=True)
+
+    if submitted:
+        if (st.session_state.login_username == APP_USERNAME and
+                st.session_state.login_password == APP_PASSWORD):
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("Incorrect username or password.")
+
+    return False
+
+if not check_login():
+    st.stop()
+
+# ── Cached resources ──────────────────────────────────────────────────────────
 
 @st.cache_resource(show_spinner="Loading CLIP model...")
 def get_clip():
@@ -116,12 +152,6 @@ def get_index():
 def get_claude():
     load_env()
     return get_anthropic_client()
-
-import os as _os
-_pinecone_key = _os.environ.get("PINECONE_API_KEY", "NOT SET")
-_anthropic_key = _os.environ.get("ANTHROPIC_API_KEY", "NOT SET")
-st.sidebar.write(f"PINECONE_API_KEY: {'✓ set' if _pinecone_key != 'NOT SET' else '✗ missing'}")
-st.sidebar.write(f"ANTHROPIC_API_KEY: {'✓ set' if _anthropic_key != 'NOT SET' else '✗ missing'}")
 
 clip_model, clip_processor = get_clip()
 index = get_index()
