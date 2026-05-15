@@ -188,6 +188,55 @@ def fetch_product_by_sku(sku: str, index) -> tuple[str, str]:
         return "", ""
 
 
+# ── Higgsfield image generation ───────────────────────────────────────────────
+
+def get_higgsfield_api_key() -> str:
+    load_env()
+    key = os.environ.get("HIGGSFIELD_API_KEY", "")
+    if not key:
+        raise ValueError("HIGGSFIELD_API_KEY is not set. Add it to Railway's environment variables.")
+    return key
+
+
+def generate_concept_image(concept_title: str, concept_description: str, product_name: str) -> str:
+    """
+    Submit a text-to-image job to Higgsfield and return the image URL.
+    Blocks until the job completes (typically 15–40 s).
+
+    Returns the URL of the generated image.
+    """
+    import higgsfield_client  # imported lazily — not needed at startup
+
+    api_key = get_higgsfield_api_key()
+    os.environ.setdefault("HIGGSFIELD_API_KEY", api_key)
+
+    # Build a concise, image-generation-friendly prompt from the concept copy.
+    prompt = (
+        f"Professional commercial product photography for {product_name}. "
+        f"{concept_description.strip()} "
+        "High-end e-commerce photography, sharp focus, clean composition, photorealistic."
+    )
+
+    result = higgsfield_client.subscribe(
+        "bytedance/seedream/v4/text-to-image",
+        prompt=prompt,
+        aspect_ratio="16:9",
+        resolution="1024x576",
+    )
+
+    # The SDK returns a dict; the image URL is in result["output"][0]
+    # (fall back gracefully if the shape differs across SDK versions)
+    output = result.get("output") or result.get("images") or []
+    if output:
+        return output[0] if isinstance(output, list) else output
+
+    url = result.get("url") or result.get("image_url") or ""
+    if url:
+        return url
+
+    raise RuntimeError(f"Higgsfield returned an unexpected response shape: {list(result.keys())}")
+
+
 # ── Claude ────────────────────────────────────────────────────────────────────
 
 def build_system_prompt(brand_voice: str) -> str:

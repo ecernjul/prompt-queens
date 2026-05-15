@@ -23,6 +23,8 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+import asyncio
+
 from core import (
     load_env,
     load_brand_voice,
@@ -36,6 +38,7 @@ from core import (
     call_claude,
     parse_sections,
     save_docx,
+    generate_concept_image,
     SECTION_KEYS,
 )
 
@@ -164,6 +167,12 @@ class BatchRequestFull(BaseModel):
     items: list[BatchItem] = Field(max_length=MAX_BATCH)
 
 
+class ImageRequest(BaseModel):
+    concept_title: str = Field(max_length=200)
+    concept_description: str = Field(max_length=2000)
+    product_name: str = Field(max_length=500)
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.post("/api/auth/login")
@@ -241,6 +250,28 @@ def download_doc(body: DownloadRequest, _: str = Depends(verify_credentials)):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers={"Content-Disposition": f'attachment; filename="content_{safe_sku}.docx"'},
     )
+
+
+@app.post("/api/generate-image")
+async def generate_image(body: ImageRequest, _: str = Depends(verify_credentials)):
+    """
+    Generate a product photography image for a Creative Brief concept via Higgsfield.
+    Runs the blocking SDK call in a thread pool so it doesn't stall the event loop.
+    """
+    try:
+        image_url = await asyncio.to_thread(
+            generate_concept_image,
+            body.concept_title,
+            body.concept_description,
+            body.product_name,
+        )
+        return {"image_url": image_url}
+    except ValueError as e:
+        # HIGGSFIELD_API_KEY not configured
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception:
+        logger.exception("Image generation failed for concept: %s", body.concept_title)
+        raise HTTPException(status_code=502, detail="Image generation failed — check server logs")
 
 
 @app.post("/api/batch")

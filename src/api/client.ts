@@ -106,6 +106,23 @@ export interface BatchItem {
   sku_mode: boolean;
 }
 
+export async function generateImage(
+  conceptTitle: string,
+  conceptDescription: string,
+  productName: string,
+): Promise<string> {
+  const res = await apiFetch("/api/generate-image", {
+    method: "POST",
+    body: JSON.stringify({
+      concept_title: conceptTitle,
+      concept_description: conceptDescription,
+      product_name: productName,
+    }),
+  });
+  const data = await res.json();
+  return data.image_url as string;
+}
+
 export async function runBatch(items: BatchItem[]): Promise<Blob> {
   const res = await apiFetch("/api/batch", {
     method: "POST",

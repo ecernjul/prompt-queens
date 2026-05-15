@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { downloadDoc } from "../../api/client";
+import { downloadDoc, generateImage } from "../../api/client";
 import type { ProductResult, Sections } from "../../types";
 import styles from "./ContentView.module.css";
 
@@ -32,6 +32,7 @@ export function ContentView({ product, sections, sectionKeys, productSummary, on
     }
   }
 
+  const isCreativeBrief = activeKey === "Creative Brief";
   const activeText = sections[activeKey] ?? "";
 
   return (
@@ -75,9 +76,16 @@ export function ContentView({ product, sections, sectionKeys, productSummary, on
         <div className={styles.panel}>
           <h2 className={styles.sectionTitle}>{activeKey}</h2>
           {activeText ? (
-            <div className={styles.content}>
-              <FormattedContent text={activeText} />
-            </div>
+            isCreativeBrief ? (
+              <CreativeBriefPanel
+                text={activeText}
+                productName={product.name}
+              />
+            ) : (
+              <div className={styles.content}>
+                <FormattedContent text={activeText} />
+              </div>
+            )
           ) : (
             <p className={styles.empty}>No content generated for this section.</p>
           )}
@@ -86,6 +94,152 @@ export function ContentView({ product, sections, sectionKeys, productSummary, on
     </div>
   );
 }
+
+// ── Creative Brief panel with per-concept image generation ────────────────────
+
+interface Concept {
+  number: number;
+  title: string;
+  description: string;
+}
+
+function parseConcepts(text: string): Concept[] {
+  const concepts: Concept[] = [];
+  // Match **Concept N: Title** (bold) or plain "Concept N: Title"
+  const pattern = /\*{0,2}Concept\s+(\d+)[:\s–-]+([^\n*]+)\*{0,2}([\s\S]*?)(?=\*{0,2}Concept\s+\d+|$)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    const number = parseInt(match[1], 10);
+    const title = match[2].trim();
+    const description = match[3].trim();
+    if (title) {
+      concepts.push({ number, title, description });
+    }
+  }
+  return concepts;
+}
+
+interface ConceptCardProps {
+  concept: Concept;
+  productName: string;
+}
+
+function ConceptCard({ concept, productName }: ConceptCardProps) {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleGenerate() {
+    setLoading(true);
+    setError(null);
+    try {
+      const url = await generateImage(
+        concept.title,
+        concept.description,
+        productName,
+      );
+      setImageUrl(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Image generation failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleDownloadImage() {
+    if (!imageUrl) return;
+    const a = document.createElement("a");
+    a.href = imageUrl;
+    a.download = `concept-${concept.number}-${concept.title.toLowerCase().replace(/\s+/g, "-")}.jpg`;
+    a.target = "_blank";
+    a.click();
+  }
+
+  return (
+    <div className={styles.conceptCard}>
+      <div className={styles.conceptHeader}>
+        <div>
+          <span className={styles.conceptNumber}>Concept {concept.number}</span>
+          <h3 className={styles.conceptTitle}>{concept.title}</h3>
+        </div>
+        <button
+          className={styles.generateImageBtn}
+          onClick={handleGenerate}
+          disabled={loading}
+        >
+          {loading ? (
+            <>
+              <span className={styles.spinner} aria-hidden="true" />
+              Generating…
+            </>
+          ) : imageUrl ? (
+            "Regenerate Image"
+          ) : (
+            "✦ Generate Image"
+          )}
+        </button>
+      </div>
+
+      <p className={styles.conceptDescription}>{concept.description}</p>
+
+      {error && (
+        <div className={styles.imageError}>⚠ {error}</div>
+      )}
+
+      {loading && (
+        <div className={styles.imagePlaceholder}>
+          <span className={styles.loadingDots}>Generating with Higgsfield<span>.</span><span>.</span><span>.</span></span>
+          <p className={styles.loadingNote}>This typically takes 15–40 seconds</p>
+        </div>
+      )}
+
+      {imageUrl && !loading && (
+        <div className={styles.imageResult}>
+          <img
+            src={imageUrl}
+            alt={`Generated image for ${concept.title}`}
+            className={styles.generatedImage}
+          />
+          <button className={styles.downloadImageBtn} onClick={handleDownloadImage}>
+            ↓ Download Image
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface CreativeBriefPanelProps {
+  text: string;
+  productName: string;
+}
+
+function CreativeBriefPanel({ text, productName }: CreativeBriefPanelProps) {
+  const concepts = parseConcepts(text);
+
+  if (concepts.length === 0) {
+    // Fallback: render as plain text if parsing fails
+    return (
+      <div className={styles.content}>
+        <FormattedContent text={text} />
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.conceptList}>
+      {concepts.map((concept) => (
+        <ConceptCard
+          key={concept.number}
+          concept={concept}
+          productName={productName}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ── Generic formatted content renderer ───────────────────────────────────────
 
 /** Render the section text with basic markdown-like formatting */
 function FormattedContent({ text }: { text: string }) {
@@ -136,7 +290,6 @@ function FormattedContent({ text }: { text: string }) {
 }
 
 function InlineMarkdown({ text }: { text: string }) {
-  // Convert **bold** → <strong>
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   return (
     <>
