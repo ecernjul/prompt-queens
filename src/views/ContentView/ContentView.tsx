@@ -8,10 +8,11 @@ interface Props {
   sections: Sections;
   sectionKeys: string[];
   productSummary: string;
+  productImageUrl: string;
   onBack: () => void;
 }
 
-export function ContentView({ product, sections, sectionKeys, productSummary, onBack }: Props) {
+export function ContentView({ product, sections, sectionKeys, productSummary, productImageUrl, onBack }: Props) {
   const [activeKey, setActiveKey] = useState(sectionKeys[0] ?? "");
   const [downloading, setDownloading] = useState(false);
 
@@ -80,6 +81,7 @@ export function ContentView({ product, sections, sectionKeys, productSummary, on
               <CreativeBriefPanel
                 text={activeText}
                 productName={product.name}
+                productImageUrl={productImageUrl}
               />
             ) : (
               <div className={styles.content}>
@@ -122,9 +124,10 @@ function parseConcepts(text: string): Concept[] {
 interface ConceptCardProps {
   concept: Concept;
   productName: string;
+  productImageUrl: string;
 }
 
-function ConceptCard({ concept, productName }: ConceptCardProps) {
+function ConceptCard({ concept, productName, productImageUrl }: ConceptCardProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -137,6 +140,7 @@ function ConceptCard({ concept, productName }: ConceptCardProps) {
         concept.title,
         concept.description,
         productName,
+        productImageUrl,
       );
       setImageUrl(url);
     } catch (err) {
@@ -212,13 +216,13 @@ function ConceptCard({ concept, productName }: ConceptCardProps) {
 interface CreativeBriefPanelProps {
   text: string;
   productName: string;
+  productImageUrl: string;
 }
 
-function CreativeBriefPanel({ text, productName }: CreativeBriefPanelProps) {
+function CreativeBriefPanel({ text, productName, productImageUrl }: CreativeBriefPanelProps) {
   const concepts = parseConcepts(text);
 
   if (concepts.length === 0) {
-    // Fallback: render as plain text if parsing fails
     return (
       <div className={styles.content}>
         <FormattedContent text={text} />
@@ -228,11 +232,17 @@ function CreativeBriefPanel({ text, productName }: CreativeBriefPanelProps) {
 
   return (
     <div className={styles.conceptList}>
+      {productImageUrl && (
+        <p className={styles.imageNote}>
+          ✓ Product image found — using <strong>Marketing Studio</strong> model for higher-quality ad imagery
+        </p>
+      )}
       {concepts.map((concept) => (
         <ConceptCard
           key={concept.number}
           concept={concept}
           productName={productName}
+          productImageUrl={productImageUrl}
         />
       ))}
     </div>

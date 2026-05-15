@@ -76,6 +76,7 @@ export interface GenerateResult {
   section_keys: string[];
   product_summary: string;
   product_name: string;
+  product_image_url: string;  // "" if not found in metadata
 }
 
 export async function generateContent(sku: string): Promise<GenerateResult> {
@@ -110,6 +111,7 @@ export async function generateImage(
   conceptTitle: string,
   conceptDescription: string,
   productName: string,
+  productImageUrl: string = "",
 ): Promise<string> {
   const res = await apiFetch("/api/generate-image", {
     method: "POST",
@@ -117,6 +119,7 @@ export async function generateImage(
       concept_title: conceptTitle,
       concept_description: conceptDescription,
       product_name: productName,
+      product_image_url: productImageUrl,
     }),
   });
   const data = await res.json();

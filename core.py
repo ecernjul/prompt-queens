@@ -168,24 +168,63 @@ def search_products(query: str, sku_mode: bool, top_k: int, index, clip_model, c
     return results["matches"]
 
 
-def fetch_product_by_sku(sku: str, index) -> tuple[str, str]:
+def extract_image_url(meta: dict) -> str:
     """
-    Fetch a product's formatted summary and display name from Pinecone by SKU.
-    Returns (product_summary, product_name). Both empty strings if not found.
+    Auto-detect an image URL from Salsify product metadata.
+
+    Strategy (in priority order):
+    1. Check known Salsify image field name patterns (case-insensitive key scan).
+    2. Fall back to any value that is an HTTPS URL ending in an image extension.
+    Returns the first URL found, or "" if none.
+    """
+    IMAGE_KEY_HINTS = [
+        "image", "photo", "img", "picture", "asset", "hero", "thumbnail",
+        "main_image", "product_image", "primary_image",
+    ]
+    IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+
+    candidates: list[str] = []
+
+    for key, value in meta.items():
+        if not isinstance(value, str):
+            continue
+        val = value.strip()
+        if not val.startswith("http"):
+            continue
+        key_lower = key.lower()
+        # Priority: field name contains an image hint
+        if any(hint in key_lower for hint in IMAGE_KEY_HINTS):
+            candidates.insert(0, val)  # put image-named fields first
+        # Fallback: value looks like an image URL
+        elif any(val.lower().endswith(ext) or f"{ext}?" in val.lower() for ext in IMAGE_EXTENSIONS):
+            candidates.append(val)
+
+    return candidates[0] if candidates else ""
+
+
+def fetch_product_by_sku(sku: str, index) -> tuple[str, str, str]:
+    """
+    Fetch a product's formatted summary, display name, and image URL from Pinecone by SKU.
+    Returns (product_summary, product_name, image_url).
+    All empty strings if the SKU is not found.
     Used server-side to avoid trusting client-supplied product data.
     """
     try:
         response = index.fetch(ids=[sku])
         vectors = response.get("vectors", {})
         if not vectors:
-            return "", ""
+            return "", "", ""
         record = vectors.get(sku, {})
         meta = record.get("metadata", {})
         if not meta:
-            return "", ""
-        return format_product(meta), product_display_name(meta, sku)
+            return "", "", ""
+        return (
+            format_product(meta),
+            product_display_name(meta, sku),
+            extract_image_url(meta),
+        )
     except Exception:
-        return "", ""
+        return "", "", ""
 
 
 # ── Higgsfield image generation ───────────────────────────────────────────────
@@ -198,48 +237,63 @@ def get_higgsfield_api_key() -> str:
     return key
 
 
-def generate_concept_image(concept_title: str, concept_description: str, product_name: str) -> str:
+def _extract_result_url(result: dict) -> str:
+    """Pull the image URL out of a Higgsfield SDK response dict."""
+    for key in ("url", "image_url", "image"):
+        val = result.get(key)
+        if val and isinstance(val, str):
+            return val
+    output = result.get("output") or result.get("images") or result.get("result") or []
+    if output:
+        return output[0] if isinstance(output, list) else str(output)
+    raise RuntimeError(f"Higgsfield returned an unexpected response shape: {list(result.keys())}")
+
+
+def generate_concept_image(
+    concept_title: str,
+    concept_description: str,
+    product_name: str,
+    product_image_url: str = "",
+) -> str:
     """
-    Submit a text-to-image job to Higgsfield (flux_2 / pro) and return the image URL.
+    Submit a text-to-image job to Higgsfield and return the generated image URL.
     Blocks until the job completes (typically 15–40 s).
 
-    Model confirmed via Higgsfield MCP:
-      - model: flux_2  (Black Forest Labs — precise prompt adherence)
-      - variant: pro   (default)
-      - cost: 1 credit per image at 1k resolution
+    When a product_image_url is provided the higher-quality
+    `marketing_studio_image` model is used (real product photo → styled ad).
+    Without an image, falls back to `flux_2/pro` (text-only, 1 credit).
     """
     import higgsfield_client  # imported lazily — not needed at startup
 
     api_key = get_higgsfield_api_key()
     os.environ["HIGGSFIELD_API_KEY"] = api_key
 
-    # Build a cinematic, image-generation-friendly prompt from the concept copy.
     prompt = (
         f"Professional commercial product photography for {product_name}. "
         f"{concept_description.strip()} "
         "High-end e-commerce photography, sharp focus, clean composition, photorealistic."
     )
 
-    # flux_2 accepts: prompt, aspect_ratio, resolution ("1k"/"2k"), model ("pro"/"flex"/"max")
-    result = higgsfield_client.subscribe(
-        "flux_2",
-        prompt=prompt,
-        aspect_ratio="16:9",
-        resolution="1k",
-        model="pro",
-    )
+    if product_image_url:
+        # marketing_studio_image: real product photo → styled campaign image
+        result = higgsfield_client.subscribe(
+            "marketing_studio_image",
+            prompt=prompt,
+            aspect_ratio="16:9",
+            resolution="1k",
+            medias=[{"value": product_image_url, "role": "image"}],
+        )
+    else:
+        # flux_2/pro: text-only fallback (1 credit, precise prompt adherence)
+        result = higgsfield_client.subscribe(
+            "flux_2",
+            prompt=prompt,
+            aspect_ratio="16:9",
+            resolution="1k",
+            model="pro",
+        )
 
-    # SDK returns a dict. Try known keys in priority order.
-    for key in ("url", "image_url", "image"):
-        val = result.get(key)
-        if val:
-            return val
-
-    output = result.get("output") or result.get("images") or result.get("result") or []
-    if output:
-        return output[0] if isinstance(output, list) else str(output)
-
-    raise RuntimeError(f"Higgsfield returned an unexpected response shape: {list(result.keys())}")
+    return _extract_result_url(result)
 
 
 # ── Claude ────────────────────────────────────────────────────────────────────

@@ -171,6 +171,7 @@ class ImageRequest(BaseModel):
     concept_title: str = Field(max_length=200)
     concept_description: str = Field(max_length=2000)
     product_name: str = Field(max_length=500)
+    product_image_url: str = Field(default="", max_length=2000)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -220,7 +221,9 @@ def search(body: SearchRequest, _: str = Depends(verify_credentials)):
 def generate(body: GenerateRequest, _: str = Depends(verify_credentials)):
     # Re-fetch product data server-side — never trust client-provided content
     # to prevent prompt injection via the product_summary field.
-    product_summary, product_name = fetch_product_by_sku(body.sku, _resources["index"])
+    product_summary, product_name, product_image_url = fetch_product_by_sku(
+        body.sku, _resources["index"]
+    )
     if not product_summary:
         raise HTTPException(status_code=404, detail=f"SKU '{body.sku}' not found in catalog")
 
@@ -236,6 +239,7 @@ def generate(body: GenerateRequest, _: str = Depends(verify_credentials)):
         "section_keys": SECTION_KEYS,
         "product_summary": product_summary,
         "product_name": product_name,
+        "product_image_url": product_image_url,  # "" if none found in metadata
     }
 
 
@@ -264,6 +268,7 @@ async def generate_image(body: ImageRequest, _: str = Depends(verify_credentials
             body.concept_title,
             body.concept_description,
             body.product_name,
+            body.product_image_url,
         )
         return {"image_url": image_url}
     except ValueError as e:
