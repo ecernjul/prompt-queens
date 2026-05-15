@@ -200,39 +200,44 @@ def get_higgsfield_api_key() -> str:
 
 def generate_concept_image(concept_title: str, concept_description: str, product_name: str) -> str:
     """
-    Submit a text-to-image job to Higgsfield and return the image URL.
+    Submit a text-to-image job to Higgsfield (flux_2 / pro) and return the image URL.
     Blocks until the job completes (typically 15–40 s).
 
-    Returns the URL of the generated image.
+    Model confirmed via Higgsfield MCP:
+      - model: flux_2  (Black Forest Labs — precise prompt adherence)
+      - variant: pro   (default)
+      - cost: 1 credit per image at 1k resolution
     """
     import higgsfield_client  # imported lazily — not needed at startup
 
     api_key = get_higgsfield_api_key()
-    os.environ.setdefault("HIGGSFIELD_API_KEY", api_key)
+    os.environ["HIGGSFIELD_API_KEY"] = api_key
 
-    # Build a concise, image-generation-friendly prompt from the concept copy.
+    # Build a cinematic, image-generation-friendly prompt from the concept copy.
     prompt = (
         f"Professional commercial product photography for {product_name}. "
         f"{concept_description.strip()} "
         "High-end e-commerce photography, sharp focus, clean composition, photorealistic."
     )
 
+    # flux_2 accepts: prompt, aspect_ratio, resolution ("1k"/"2k"), model ("pro"/"flex"/"max")
     result = higgsfield_client.subscribe(
-        "bytedance/seedream/v4/text-to-image",
+        "flux_2",
         prompt=prompt,
         aspect_ratio="16:9",
-        resolution="1024x576",
+        resolution="1k",
+        model="pro",
     )
 
-    # The SDK returns a dict; the image URL is in result["output"][0]
-    # (fall back gracefully if the shape differs across SDK versions)
-    output = result.get("output") or result.get("images") or []
-    if output:
-        return output[0] if isinstance(output, list) else output
+    # SDK returns a dict. Try known keys in priority order.
+    for key in ("url", "image_url", "image"):
+        val = result.get(key)
+        if val:
+            return val
 
-    url = result.get("url") or result.get("image_url") or ""
-    if url:
-        return url
+    output = result.get("output") or result.get("images") or result.get("result") or []
+    if output:
+        return output[0] if isinstance(output, list) else str(output)
 
     raise RuntimeError(f"Higgsfield returned an unexpected response shape: {list(result.keys())}")
 
