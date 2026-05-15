@@ -41,7 +41,7 @@ export default function App() {
   const [sectionKeys, setSectionKeys] = useState<string[]>([]);
   // product_summary is returned by the server after generation (not trusted from client)
   const [serverSummary, setServerSummary] = useState<string>("");
-  const [productImageUrl, setProductImageUrl] = useState<string>("");
+  const [productImageUrls, setProductImageUrls] = useState<string[]>([]);
 
   /* -- Handlers -------------------------------------------------------- */
   const handleProductSelected = useCallback((p: ProductResult) => {
@@ -49,16 +49,16 @@ export default function App() {
     setSections(null);
     setSectionKeys([]);
     setServerSummary("");
-    setProductImageUrl("");
+    setProductImageUrls([]);
     setView("generate");
   }, []);
 
   const handleContentGenerated = useCallback(
-    (s: Sections, keys: string[], summary: string, imageUrl: string) => {
+    (s: Sections, keys: string[], summary: string, imageUrls: string[]) => {
       setSections(s);
       setSectionKeys(keys);
       setServerSummary(summary);
-      setProductImageUrl(imageUrl);
+      setProductImageUrls(imageUrls);
       setView("content");
     },
     [],
@@ -128,7 +128,7 @@ export default function App() {
               sections={sections}
               sectionKeys={sectionKeys}
               productSummary={serverSummary}
-              productImageUrl={productImageUrl}
+              productImageUrls={productImageUrls}
               onBack={() => setView("generate")}
             />
           )}

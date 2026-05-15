@@ -8,11 +8,11 @@ interface Props {
   sections: Sections;
   sectionKeys: string[];
   productSummary: string;
-  productImageUrl: string;
+  productImageUrls: string[];
   onBack: () => void;
 }
 
-export function ContentView({ product, sections, sectionKeys, productSummary, productImageUrl, onBack }: Props) {
+export function ContentView({ product, sections, sectionKeys, productSummary, productImageUrls, onBack }: Props) {
   const [activeKey, setActiveKey] = useState(sectionKeys[0] ?? "");
   const [downloading, setDownloading] = useState(false);
 
@@ -35,6 +35,9 @@ export function ContentView({ product, sections, sectionKeys, productSummary, pr
 
   const isCreativeBrief = activeKey === "Creative Brief";
   const activeText = sections[activeKey] ?? "";
+
+  // User-selected image for Higgsfield generation (defaults to first available)
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string>(productImageUrls[0] ?? "");
 
   return (
     <div className={styles.container}>
@@ -81,7 +84,9 @@ export function ContentView({ product, sections, sectionKeys, productSummary, pr
               <CreativeBriefPanel
                 text={activeText}
                 productName={product.name}
-                productImageUrl={productImageUrl}
+                productImageUrls={productImageUrls}
+                selectedImageUrl={selectedImageUrl}
+                onSelectImage={setSelectedImageUrl}
               />
             ) : (
               <div className={styles.content}>
@@ -124,10 +129,10 @@ function parseConcepts(text: string): Concept[] {
 interface ConceptCardProps {
   concept: Concept;
   productName: string;
-  productImageUrl: string;
+  selectedImageUrl: string;   // the image the user has chosen (or "" for text-only)
 }
 
-function ConceptCard({ concept, productName, productImageUrl }: ConceptCardProps) {
+function ConceptCard({ concept, productName, selectedImageUrl }: ConceptCardProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,7 +145,7 @@ function ConceptCard({ concept, productName, productImageUrl }: ConceptCardProps
         concept.title,
         concept.description,
         productName,
-        productImageUrl,
+        selectedImageUrl,
       );
       setImageUrl(url);
     } catch (err) {
@@ -216,10 +221,18 @@ function ConceptCard({ concept, productName, productImageUrl }: ConceptCardProps
 interface CreativeBriefPanelProps {
   text: string;
   productName: string;
-  productImageUrl: string;
+  productImageUrls: string[];
+  selectedImageUrl: string;
+  onSelectImage: (url: string) => void;
 }
 
-function CreativeBriefPanel({ text, productName, productImageUrl }: CreativeBriefPanelProps) {
+function CreativeBriefPanel({
+  text,
+  productName,
+  productImageUrls,
+  selectedImageUrl,
+  onSelectImage,
+}: CreativeBriefPanelProps) {
   const concepts = parseConcepts(text);
 
   if (concepts.length === 0) {
@@ -232,17 +245,44 @@ function CreativeBriefPanel({ text, productName, productImageUrl }: CreativeBrie
 
   return (
     <div className={styles.conceptList}>
-      {productImageUrl && (
-        <p className={styles.imageNote}>
-          ✓ Product image found — using <strong>Marketing Studio</strong> model for higher-quality ad imagery
-        </p>
+      {/* Product image selector */}
+      {productImageUrls.length > 0 && (
+        <div className={styles.imageSelector}>
+          <p className={styles.imageSelectorLabel}>
+            {productImageUrls.length > 1
+              ? `${productImageUrls.length} product images found — select one to use with each concept`
+              : "Product image found — using Marketing Studio for higher-quality ad imagery"}
+          </p>
+          <div className={styles.imageThumbs}>
+            {productImageUrls.map((url, i) => (
+              <button
+                key={i}
+                className={`${styles.thumbBtn} ${selectedImageUrl === url ? styles.thumbSelected : ""}`}
+                onClick={() => onSelectImage(url)}
+                title={`Image ${i + 1}`}
+              >
+                <img src={url} alt={`Product image ${i + 1}`} className={styles.thumb} />
+                {selectedImageUrl === url && <span className={styles.thumbCheck}>✓</span>}
+              </button>
+            ))}
+            <button
+              className={`${styles.thumbBtn} ${styles.thumbNone} ${selectedImageUrl === "" ? styles.thumbSelected : ""}`}
+              onClick={() => onSelectImage("")}
+              title="Text-only (no reference image)"
+            >
+              <span className={styles.thumbNoneLabel}>Text only</span>
+              {selectedImageUrl === "" && <span className={styles.thumbCheck}>✓</span>}
+            </button>
+          </div>
+        </div>
       )}
+
       {concepts.map((concept) => (
         <ConceptCard
           key={concept.number}
           concept={concept}
           productName={productName}
-          productImageUrl={productImageUrl}
+          selectedImageUrl={selectedImageUrl}
         />
       ))}
     </div>

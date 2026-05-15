@@ -223,7 +223,7 @@ def search(body: SearchRequest, _: str = Depends(verify_credentials)):
 def generate(body: GenerateRequest, _: str = Depends(verify_credentials)):
     # Re-fetch product data server-side — never trust client-provided content
     # to prevent prompt injection via the product_summary field.
-    product_summary, product_name, product_image_url = fetch_product_by_sku(
+    product_summary, product_name, product_image_urls = fetch_product_by_sku(
         body.vector_id, _resources["index"]
     )
     if not product_summary:
@@ -241,7 +241,7 @@ def generate(body: GenerateRequest, _: str = Depends(verify_credentials)):
         "section_keys": SECTION_KEYS,
         "product_summary": product_summary,
         "product_name": product_name,
-        "product_image_url": product_image_url,  # "" if none found in metadata
+        "product_image_urls": product_image_urls,  # [] if none found in metadata
     }
 
 

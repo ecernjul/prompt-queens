@@ -168,14 +168,14 @@ def search_products(query: str, sku_mode: bool, top_k: int, index, clip_model, c
     return results["matches"]
 
 
-def extract_image_url(meta: dict) -> str:
+def extract_image_urls(meta: dict) -> list[str]:
     """
-    Auto-detect an image URL from Salsify product metadata.
+    Auto-detect all image URLs from Salsify product metadata.
 
     Strategy (in priority order):
-    1. Check known Salsify image field name patterns (case-insensitive key scan).
-    2. Fall back to any value that is an HTTPS URL ending in an image extension.
-    Returns the first URL found, or "" if none.
+    1. Fields whose name contains image/photo/asset hint keywords come first.
+    2. Then any HTTPS URL whose value ends in a common image extension.
+    Deduplicates while preserving order. Returns [] if none found.
     """
     IMAGE_KEY_HINTS = [
         "image", "photo", "img", "picture", "asset", "hero", "thumbnail",
@@ -183,31 +183,39 @@ def extract_image_url(meta: dict) -> str:
     ]
     IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif")
 
-    candidates: list[str] = []
+    priority: list[str] = []
+    fallback: list[str] = []
+    seen: set[str] = set()
 
     for key, value in meta.items():
         if not isinstance(value, str):
             continue
         val = value.strip()
-        if not val.startswith("http"):
+        if not val.startswith("http") or val in seen:
             continue
         key_lower = key.lower()
-        # Priority: field name contains an image hint
         if any(hint in key_lower for hint in IMAGE_KEY_HINTS):
-            candidates.insert(0, val)  # put image-named fields first
-        # Fallback: value looks like an image URL
+            priority.append(val)
+            seen.add(val)
         elif any(val.lower().endswith(ext) or f"{ext}?" in val.lower() for ext in IMAGE_EXTENSIONS):
-            candidates.append(val)
+            fallback.append(val)
+            seen.add(val)
 
-    return candidates[0] if candidates else ""
+    return priority + fallback
 
 
-def fetch_product_by_sku(vector_id: str, index) -> tuple[str, str, str]:
+def extract_image_url(meta: dict) -> str:
+    """Return the single best image URL from metadata, or '' if none."""
+    urls = extract_image_urls(meta)
+    return urls[0] if urls else ""
+
+
+def fetch_product_by_sku(vector_id: str, index) -> tuple[str, str, list[str]]:
     """
-    Fetch a product's formatted summary, display name, and image URL from Pinecone
+    Fetch a product's formatted summary, display name, and all image URLs from Pinecone
     using the real vector record ID (not necessarily the Product_Code/SKU).
-    Returns (product_summary, product_name, image_url).
-    All empty strings if the record is not found.
+    Returns (product_summary, product_name, image_urls[]).
+    Returns ("", "", []) if the record is not found.
     """
     try:
         response = index.fetch(ids=[vector_id])
@@ -220,11 +228,11 @@ def fetch_product_by_sku(vector_id: str, index) -> tuple[str, str, str]:
             vectors = response.get("vectors", {})
 
         if not vectors:
-            return "", "", ""
+            return "", "", []
 
         record = vectors.get(vector_id)
         if record is None:
-            return "", "", ""
+            return "", "", []
 
         # Record may be a Vector object (SDK ≥3) or a plain dict.
         if hasattr(record, "metadata"):
@@ -233,15 +241,15 @@ def fetch_product_by_sku(vector_id: str, index) -> tuple[str, str, str]:
             meta = record.get("metadata", {})
 
         if not meta:
-            return "", "", ""
+            return "", "", []
 
         return (
             format_product(meta),
             product_display_name(meta, vector_id),
-            extract_image_url(meta),
+            extract_image_urls(meta),
         )
     except Exception:
-        return "", "", ""
+        return "", "", []
 
 
 # ── Higgsfield image generation ───────────────────────────────────────────────
@@ -279,6 +287,9 @@ def generate_concept_image(
     When a product_image_url is provided the higher-quality
     `marketing_studio_image` model is used (real product photo → styled ad).
     Without an image, falls back to `flux_2/pro` (text-only, 1 credit).
+
+    The higgsfield-client SDK's subscribe() takes params as a positional dict,
+    NOT as **kwargs — confirmed by: SyncClient.subscribe() unexpected keyword 'prompt'.
     """
     import higgsfield_client  # imported lazily — not needed at startup
 
@@ -292,22 +303,24 @@ def generate_concept_image(
     )
 
     if product_image_url:
-        # marketing_studio_image: real product photo → styled campaign image
         result = higgsfield_client.subscribe(
             "marketing_studio_image",
-            prompt=prompt,
-            aspect_ratio="16:9",
-            resolution="1k",
-            medias=[{"value": product_image_url, "role": "image"}],
+            {
+                "prompt": prompt,
+                "aspect_ratio": "16:9",
+                "resolution": "1k",
+                "medias": [{"value": product_image_url, "role": "image"}],
+            },
         )
     else:
-        # flux_2/pro: text-only fallback (1 credit, precise prompt adherence)
         result = higgsfield_client.subscribe(
             "flux_2",
-            prompt=prompt,
-            aspect_ratio="16:9",
-            resolution="1k",
-            model="pro",
+            {
+                "prompt": prompt,
+                "aspect_ratio": "16:9",
+                "resolution": "1k",
+                "model": "pro",
+            },
         )
 
     return _extract_result_url(result)
