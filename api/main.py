@@ -261,8 +261,9 @@ def download_doc(body: DownloadRequest, _: str = Depends(verify_credentials)):
 @app.post("/api/generate-image")
 async def generate_image(body: ImageRequest, _: str = Depends(verify_credentials)):
     """
-    Generate a product photography image for a Creative Brief concept via Higgsfield.
-    Runs the blocking SDK call in a thread pool so it doesn't stall the event loop.
+    Generate a product photography image for a Creative Brief concept via fal.ai.
+    Runs the blocking fal_client.run() call in a thread pool so it doesn't stall
+    the async event loop.
     """
     try:
         image_url = await asyncio.to_thread(
@@ -273,10 +274,13 @@ async def generate_image(body: ImageRequest, _: str = Depends(verify_credentials
             body.product_image_url,
         )
         return {"image_url": image_url}
+    except ValueError as e:
+        # Configuration error (missing API key) — don't retry
+        logger.error("Image generation config error: %s", e)
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
-        # Temporarily exposing full error for debugging — remove once image gen is stable
         logger.exception("Image generation failed for concept: %s", body.concept_title)
-        raise HTTPException(status_code=502, detail=f"Image generation failed: {e}")
+        raise HTTPException(status_code=502, detail="Image generation failed. Please try again.")
 
 
 @app.post("/api/batch")

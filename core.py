@@ -252,42 +252,24 @@ def fetch_product_by_sku(vector_id: str, index) -> tuple[str, str, list[str]]:
         return "", "", []
 
 
-# ── Higgsfield image generation ───────────────────────────────────────────────
+# ── fal.ai image generation ───────────────────────────────────────────────────
 
-def get_higgsfield_api_key() -> str:
+def _get_fal_key() -> str:
     """
-    The higgsfield-client SDK reads credentials from these env vars (in priority order):
-      HF_KEY           — single combined key (format: KEY_ID:KEY_SECRET or a bearer token)
-      HF_API_KEY       — key ID  (used together with HF_API_SECRET)
-      HF_API_SECRET    — key secret
-    We also accept HIGGSFIELD_API_KEY as an alias and map it to HF_KEY.
+    fal-client reads credentials from the FAL_KEY environment variable.
+    We also accept HIGGSFIELD_API_KEY / HF_KEY as legacy aliases so existing
+    Railway deployments don't need immediate re-configuration (though fal.ai
+    requires its own key — set FAL_KEY in Railway environment variables).
     """
     load_env()
-
-    # Allow HIGGSFIELD_API_KEY as a convenience alias → map to HF_KEY
-    alias = os.environ.get("HIGGSFIELD_API_KEY", "")
-    if alias and not os.environ.get("HF_KEY"):
-        os.environ["HF_KEY"] = alias
-
-    # Validate that at least one recognised credential is present
-    if not (os.environ.get("HF_KEY") or os.environ.get("HF_API_KEY")):
-        raise ValueError(
-            "Higgsfield API credentials missing. "
-            "Add HF_KEY (or HF_API_KEY + HF_API_SECRET) to Railway's environment variables."
-        )
-    return os.environ.get("HF_KEY") or os.environ.get("HF_API_KEY", "")
-
-
-def _extract_result_url(result: dict) -> str:
-    """Pull the image URL out of a Higgsfield SDK response dict."""
-    for key in ("url", "image_url", "image"):
-        val = result.get(key)
-        if val and isinstance(val, str):
-            return val
-    output = result.get("output") or result.get("images") or result.get("result") or []
-    if output:
-        return output[0] if isinstance(output, list) else str(output)
-    raise RuntimeError(f"Higgsfield returned an unexpected response shape: {list(result.keys())}")
+    key = os.environ.get("FAL_KEY", "")
+    if key:
+        return key
+    raise ValueError(
+        "fal.ai API key missing. "
+        "Add FAL_KEY to Railway's environment variables. "
+        "Get your key at https://fal.ai/dashboard/keys"
+    )
 
 
 def generate_concept_image(
@@ -297,48 +279,61 @@ def generate_concept_image(
     product_image_url: str = "",
 ) -> str:
     """
-    Submit a text-to-image job to Higgsfield and return the generated image URL.
-    Blocks until the job completes (typically 15–40 s).
+    Submit a text-to-image job to fal.ai and return the generated image URL.
+    Blocks until the job completes (typically 10–30 s).
 
-    When a product_image_url is provided the higher-quality
-    `marketing_studio_image` model is used (real product photo → styled ad).
-    Without an image, falls back to `flux_2/pro` (text-only, 1 credit).
+    Models used:
+      • With product image  → fal-ai/flux-pro/v1.1/redux
+        (image-guided variation: anchors the product visually while applying
+        the concept description as a style/scene transformation)
+      • Text-only           → fal-ai/flux-pro/v1.1
+        (high-quality commercial photography from text prompt alone)
 
-    The higgsfield-client SDK's subscribe() takes params as a positional dict,
-    NOT as **kwargs — confirmed by: SyncClient.subscribe() unexpected keyword 'prompt'.
+    FAL_KEY must be set in the environment.
     """
-    import higgsfield_client  # imported lazily — not needed at startup
+    import fal_client  # imported lazily — not needed at startup
 
-    get_higgsfield_api_key()  # validates + maps HIGGSFIELD_API_KEY → HF_KEY if needed
+    _get_fal_key()  # raises if missing, also ensures FAL_KEY is loaded
 
     prompt = (
         f"Professional commercial product photography for {product_name}. "
         f"{concept_description.strip()} "
-        "High-end e-commerce photography, sharp focus, clean composition, photorealistic."
+        "High-end advertising photography, sharp focus, clean composition, photorealistic."
     )
 
     if product_image_url:
-        result = higgsfield_client.subscribe(
-            "marketing_studio_image",
-            {
+        # Redux: use the product photo as a visual anchor, guide with concept prompt
+        result = fal_client.run(
+            "fal-ai/flux-pro/v1.1/redux",
+            arguments={
                 "prompt": prompt,
-                "aspect_ratio": "16:9",
-                "resolution": "1k",
-                "medias": [{"value": product_image_url, "role": "image"}],
+                "image_url": product_image_url,
+                "image_size": "landscape_16_9",
+                "num_images": 1,
+                "output_format": "jpeg",
+                "safety_tolerance": "2",
             },
         )
     else:
-        result = higgsfield_client.subscribe(
-            "flux_2",
-            {
+        # Pure text-to-image
+        result = fal_client.run(
+            "fal-ai/flux-pro/v1.1",
+            arguments={
                 "prompt": prompt,
-                "aspect_ratio": "16:9",
-                "resolution": "1k",
-                "model": "pro",
+                "image_size": "landscape_16_9",
+                "num_images": 1,
+                "output_format": "jpeg",
+                "safety_tolerance": "2",
             },
         )
 
-    return _extract_result_url(result)
+    # fal.ai returns {"images": [{"url": "...", "width": ..., "height": ...}], ...}
+    images = result.get("images", [])
+    if images and isinstance(images, list):
+        url = images[0].get("url", "")
+        if url:
+            return url
+    raise RuntimeError(f"fal.ai returned an unexpected response shape: {list(result.keys())}")
 
 
 # ── Claude ────────────────────────────────────────────────────────────────────

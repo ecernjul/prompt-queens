@@ -1,5 +1,5 @@
 anthropic==0.84.0
-higgsfield-client
+fal-client==1.0.0
 pinecone==7.3.0
 transformers==4.57.6
 python-docx==1.2.0
