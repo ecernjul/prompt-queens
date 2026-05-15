@@ -202,25 +202,42 @@ def extract_image_url(meta: dict) -> str:
     return candidates[0] if candidates else ""
 
 
-def fetch_product_by_sku(sku: str, index) -> tuple[str, str, str]:
+def fetch_product_by_sku(vector_id: str, index) -> tuple[str, str, str]:
     """
-    Fetch a product's formatted summary, display name, and image URL from Pinecone by SKU.
+    Fetch a product's formatted summary, display name, and image URL from Pinecone
+    using the real vector record ID (not necessarily the Product_Code/SKU).
     Returns (product_summary, product_name, image_url).
-    All empty strings if the SKU is not found.
-    Used server-side to avoid trusting client-supplied product data.
+    All empty strings if the record is not found.
     """
     try:
-        response = index.fetch(ids=[sku])
-        vectors = response.get("vectors", {})
+        response = index.fetch(ids=[vector_id])
+
+        # Pinecone SDK ≥3 returns a FetchResponse object; older versions return a dict.
+        # Support both shapes.
+        if hasattr(response, "vectors"):
+            vectors = response.vectors or {}
+        else:
+            vectors = response.get("vectors", {})
+
         if not vectors:
             return "", "", ""
-        record = vectors.get(sku, {})
-        meta = record.get("metadata", {})
+
+        record = vectors.get(vector_id)
+        if record is None:
+            return "", "", ""
+
+        # Record may be a Vector object (SDK ≥3) or a plain dict.
+        if hasattr(record, "metadata"):
+            meta = record.metadata or {}
+        else:
+            meta = record.get("metadata", {})
+
         if not meta:
             return "", "", ""
+
         return (
             format_product(meta),
-            product_display_name(meta, sku),
+            product_display_name(meta, vector_id),
             extract_image_url(meta),
         )
     except Exception:
