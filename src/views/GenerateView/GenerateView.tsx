@@ -29,7 +29,7 @@ export function GenerateView({ product, onContentGenerated, onBack }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const result = await generateContent(product.sku);
+      const result = await generateContent(product.vector_id, product.sku);
       onContentGenerated(result.sections, result.section_keys, result.product_summary, result.product_image_url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");

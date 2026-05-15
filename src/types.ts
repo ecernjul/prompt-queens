@@ -1,8 +1,8 @@
 /** Represents a single product result from search */
 export interface ProductResult {
-  id: string;
+  vector_id: string;  // real Pinecone record ID — used for server-side fetch
   score: number;
-  sku: string;
+  sku: string;        // Product_Code from Salsify metadata — display only
   name: string;
   summary: string;
 }

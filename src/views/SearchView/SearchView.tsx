@@ -103,7 +103,7 @@ export function SearchView({ onProductSelected }: Props) {
           </p>
           <div className={styles.cards}>
             {results.map((r) => (
-              <div key={r.id} className={styles.card}>
+              <div key={r.vector_id} className={styles.card}>
                 <div className={styles.cardBody}>
                   <p className={styles.cardName}>{r.name}</p>
                   <p className={styles.cardMeta}>

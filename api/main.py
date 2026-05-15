@@ -147,7 +147,9 @@ class SearchRequest(BaseModel):
 
 
 class GenerateRequest(BaseModel):
-    # Server re-fetches product data by SKU — client-provided summary is ignored.
+    # vector_id is the real Pinecone record ID (may differ from Product_Code/SKU).
+    # The SKU is kept for display/logging only.
+    vector_id: str = Field(max_length=500)
     sku: str = Field(max_length=100)
 
 
@@ -207,9 +209,9 @@ def search(body: SearchRequest, _: str = Depends(verify_credentials)):
         meta = m.get("metadata", {})
         results.append(
             {
-                "id": m["id"],
+                "vector_id": m["id"],           # actual Pinecone record ID — used for fetch
                 "score": m["score"],
-                "sku": meta.get("Product_Code", m["id"]),
+                "sku": meta.get("Product_Code", m["id"]),   # display / label only
                 "name": product_display_name(meta, m["id"]),
                 "summary": format_product(meta),
             }
@@ -222,7 +224,7 @@ def generate(body: GenerateRequest, _: str = Depends(verify_credentials)):
     # Re-fetch product data server-side — never trust client-provided content
     # to prevent prompt injection via the product_summary field.
     product_summary, product_name, product_image_url = fetch_product_by_sku(
-        body.sku, _resources["index"]
+        body.vector_id, _resources["index"]
     )
     if not product_summary:
         raise HTTPException(status_code=404, detail=f"SKU '{body.sku}' not found in catalog")

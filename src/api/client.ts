@@ -51,9 +51,9 @@ export function isAuthenticated(): boolean {
 }
 
 export interface SearchResult {
-  id: string;
+  vector_id: string;   // real Pinecone record ID — used for server-side fetch
   score: number;
-  sku: string;
+  sku: string;         // Product_Code from metadata — display / label only
   name: string;
   summary: string;
 }
@@ -79,12 +79,12 @@ export interface GenerateResult {
   product_image_url: string;  // "" if not found in metadata
 }
 
-export async function generateContent(sku: string): Promise<GenerateResult> {
-  // Only the SKU is sent — the server re-fetches product data from Pinecone
-  // to prevent prompt injection via client-supplied product_summary.
+export async function generateContent(vectorId: string, sku: string): Promise<GenerateResult> {
+  // vector_id is the real Pinecone record ID used to fetch product data server-side.
+  // sku is kept for display/logging. Neither is trusted for content — server fetches fresh.
   const res = await apiFetch("/api/generate", {
     method: "POST",
-    body: JSON.stringify({ sku }),
+    body: JSON.stringify({ vector_id: vectorId, sku }),
   });
   return res.json();
 }
