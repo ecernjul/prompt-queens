@@ -255,11 +255,27 @@ def fetch_product_by_sku(vector_id: str, index) -> tuple[str, str, list[str]]:
 # ── Higgsfield image generation ───────────────────────────────────────────────
 
 def get_higgsfield_api_key() -> str:
+    """
+    The higgsfield-client SDK reads credentials from these env vars (in priority order):
+      HF_KEY           — single combined key (format: KEY_ID:KEY_SECRET or a bearer token)
+      HF_API_KEY       — key ID  (used together with HF_API_SECRET)
+      HF_API_SECRET    — key secret
+    We also accept HIGGSFIELD_API_KEY as an alias and map it to HF_KEY.
+    """
     load_env()
-    key = os.environ.get("HIGGSFIELD_API_KEY", "")
-    if not key:
-        raise ValueError("HIGGSFIELD_API_KEY is not set. Add it to Railway's environment variables.")
-    return key
+
+    # Allow HIGGSFIELD_API_KEY as a convenience alias → map to HF_KEY
+    alias = os.environ.get("HIGGSFIELD_API_KEY", "")
+    if alias and not os.environ.get("HF_KEY"):
+        os.environ["HF_KEY"] = alias
+
+    # Validate that at least one recognised credential is present
+    if not (os.environ.get("HF_KEY") or os.environ.get("HF_API_KEY")):
+        raise ValueError(
+            "Higgsfield API credentials missing. "
+            "Add HF_KEY (or HF_API_KEY + HF_API_SECRET) to Railway's environment variables."
+        )
+    return os.environ.get("HF_KEY") or os.environ.get("HF_API_KEY", "")
 
 
 def _extract_result_url(result: dict) -> str:
@@ -293,8 +309,7 @@ def generate_concept_image(
     """
     import higgsfield_client  # imported lazily — not needed at startup
 
-    api_key = get_higgsfield_api_key()
-    os.environ["HIGGSFIELD_API_KEY"] = api_key
+    get_higgsfield_api_key()  # validates + maps HIGGSFIELD_API_KEY → HF_KEY if needed
 
     prompt = (
         f"Professional commercial product photography for {product_name}. "
