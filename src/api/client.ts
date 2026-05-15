@@ -74,15 +74,16 @@ export async function searchProducts(
 export interface GenerateResult {
   sections: Record<string, string>;
   section_keys: string[];
+  product_summary: string;
+  product_name: string;
 }
 
-export async function generateContent(
-  sku: string,
-  productSummary: string,
-): Promise<GenerateResult> {
+export async function generateContent(sku: string): Promise<GenerateResult> {
+  // Only the SKU is sent — the server re-fetches product data from Pinecone
+  // to prevent prompt injection via client-supplied product_summary.
   const res = await apiFetch("/api/generate", {
     method: "POST",
-    body: JSON.stringify({ sku, product_summary: productSummary }),
+    body: JSON.stringify({ sku }),
   });
   return res.json();
 }

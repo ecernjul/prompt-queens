@@ -7,17 +7,18 @@ interface Props {
   product: ProductResult;
   sections: Sections;
   sectionKeys: string[];
+  productSummary: string;
   onBack: () => void;
 }
 
-export function ContentView({ product, sections, sectionKeys, onBack }: Props) {
+export function ContentView({ product, sections, sectionKeys, productSummary, onBack }: Props) {
   const [activeKey, setActiveKey] = useState(sectionKeys[0] ?? "");
   const [downloading, setDownloading] = useState(false);
 
   async function handleDownload() {
     setDownloading(true);
     try {
-      const blob = await downloadDoc(product.sku, product.name, product.summary, sections);
+      const blob = await downloadDoc(product.sku, product.name, productSummary, sections);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

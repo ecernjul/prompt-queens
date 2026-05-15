@@ -168,6 +168,26 @@ def search_products(query: str, sku_mode: bool, top_k: int, index, clip_model, c
     return results["matches"]
 
 
+def fetch_product_by_sku(sku: str, index) -> tuple[str, str]:
+    """
+    Fetch a product's formatted summary and display name from Pinecone by SKU.
+    Returns (product_summary, product_name). Both empty strings if not found.
+    Used server-side to avoid trusting client-supplied product data.
+    """
+    try:
+        response = index.fetch(ids=[sku])
+        vectors = response.get("vectors", {})
+        if not vectors:
+            return "", ""
+        record = vectors.get(sku, {})
+        meta = record.get("metadata", {})
+        if not meta:
+            return "", ""
+        return format_product(meta), product_display_name(meta, sku)
+    except Exception:
+        return "", ""
+
+
 # ── Claude ────────────────────────────────────────────────────────────────────
 
 def build_system_prompt(brand_voice: str) -> str:

@@ -4,19 +4,24 @@ Serves the React SPA and exposes JSON endpoints for search, generation, and down
 """
 
 import io
+import logging
 import os
+import re
+import secrets
+import time
 import zipfile
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core import (
     load_env,
@@ -27,18 +32,48 @@ from core import (
     format_product,
     product_display_name,
     search_products,
+    fetch_product_by_sku,
     call_claude,
     parse_sections,
     save_docx,
     SECTION_KEYS,
 )
 
+logger = logging.getLogger(__name__)
+
 # ── Environment ───────────────────────────────────────────────────────────────
 
 load_env()
 
-APP_USERNAME = os.environ.get("APP_USERNAME", "admin")
+APP_USERNAME = os.environ.get("APP_USERNAME", "")
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "")
+
+# CRITICAL: Refuse to start without credentials set.
+if not APP_USERNAME or not APP_PASSWORD:
+    raise RuntimeError(
+        "APP_USERNAME and APP_PASSWORD must both be set as environment variables. "
+        "Refusing to start without authentication configured."
+    )
+
+# ── Rate limiter (in-memory, per IP) ─────────────────────────────────────────
+
+_login_attempts: dict[str, list[float]] = defaultdict(list)
+_RATE_WINDOW = 60   # seconds
+_RATE_MAX    = 5    # attempts per window
+
+
+def _check_login_rate(ip: str) -> None:
+    now = time.monotonic()
+    # Prune attempts outside the window
+    _login_attempts[ip] = [t for t in _login_attempts[ip] if now - t < _RATE_WINDOW]
+    if len(_login_attempts[ip]) >= _RATE_MAX:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please wait a minute and try again.",
+            headers={"Retry-After": "60"},
+        )
+    _login_attempts[ip].append(now)
+
 
 # ── Shared resources (loaded once at startup) ─────────────────────────────────
 
@@ -69,11 +104,16 @@ app.add_middleware(
 
 security = HTTPBasic()
 
+# ── Limits ────────────────────────────────────────────────────────────────────
+
+MAX_BATCH   = 50
+MAX_TOP_K   = 20
+MAX_QUERY_LEN = 500
+
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
 def verify_credentials(credentials: Annotated[HTTPBasicCredentials, Depends(security)]):
-    import secrets
     correct_username = secrets.compare_digest(credentials.username, APP_USERNAME)
     correct_password = secrets.compare_digest(credentials.password, APP_PASSWORD)
     if not (correct_username and correct_password):
@@ -85,6 +125,11 @@ def verify_credentials(credentials: Annotated[HTTPBasicCredentials, Depends(secu
     return credentials.username
 
 
+def _safe_filename(raw: str) -> str:
+    """Whitelist-sanitize a string for use in a Content-Disposition filename."""
+    return re.sub(r"[^A-Za-z0-9_\-]", "_", raw)
+
+
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
 class LoginRequest(BaseModel):
@@ -93,34 +138,47 @@ class LoginRequest(BaseModel):
 
 
 class SearchRequest(BaseModel):
-    query: str
+    query: str = Field(max_length=MAX_QUERY_LEN)
     sku_mode: bool = False
-    top_k: int = 3
+    top_k: int = Field(default=3, ge=1, le=MAX_TOP_K)
 
 
 class GenerateRequest(BaseModel):
-    sku: str
-    product_summary: str
+    # Server re-fetches product data by SKU — client-provided summary is ignored.
+    sku: str = Field(max_length=100)
 
 
 class BatchItem(BaseModel):
-    query: str
+    query: str = Field(max_length=MAX_QUERY_LEN)
     sku_mode: bool = False
 
 
-class BatchRequest(BaseModel):
-    items: list[BatchItem]
+class DownloadRequest(BaseModel):
+    sku: str = Field(max_length=100)
+    name: str = Field(max_length=500)
+    product_summary: str = Field(max_length=10_000)
+    sections: dict[str, str]
+
+
+class BatchRequestFull(BaseModel):
+    items: list[BatchItem] = Field(max_length=MAX_BATCH)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @app.post("/api/auth/login")
-def login(body: LoginRequest):
-    import secrets
+def login(body: LoginRequest, request: Request):
+    # Rate-limit by client IP before touching credentials.
+    client_ip = request.client.host if request.client else "unknown"
+    _check_login_rate(client_ip)
+
     ok_user = secrets.compare_digest(body.username, APP_USERNAME)
     ok_pass = secrets.compare_digest(body.password, APP_PASSWORD)
     if not (ok_user and ok_pass):
         raise HTTPException(status_code=401, detail="Incorrect username or password")
+
+    # Clear rate-limit record on successful login.
+    _login_attempts.pop(client_ip, None)
     return {"ok": True}
 
 
@@ -151,28 +209,25 @@ def search(body: SearchRequest, _: str = Depends(verify_credentials)):
 
 @app.post("/api/generate")
 def generate(body: GenerateRequest, _: str = Depends(verify_credentials)):
+    # Re-fetch product data server-side — never trust client-provided content
+    # to prevent prompt injection via the product_summary field.
+    product_summary, product_name = fetch_product_by_sku(body.sku, _resources["index"])
+    if not product_summary:
+        raise HTTPException(status_code=404, detail=f"SKU '{body.sku}' not found in catalog")
+
     raw = call_claude(
         body.sku,
-        body.product_summary,
+        product_summary,
         _resources["claude"],
         _resources["brand_voice"],
     )
     sections = parse_sections(raw)
-    return {"sections": sections, "section_keys": SECTION_KEYS}
-
-
-@app.post("/api/download")
-def download(body: GenerateRequest, _: str = Depends(verify_credentials)):
-    # body.sku and body.product_summary are reused; we also need sections
-    # Client sends sku + product_summary + sections in a combined payload
-    raise HTTPException(status_code=400, detail="Use /api/download-doc instead")
-
-
-class DownloadRequest(BaseModel):
-    sku: str
-    name: str
-    product_summary: str
-    sections: dict[str, str]
+    return {
+        "sections": sections,
+        "section_keys": SECTION_KEYS,
+        "product_summary": product_summary,
+        "product_name": product_name,
+    }
 
 
 @app.post("/api/download-doc")
@@ -180,7 +235,7 @@ def download_doc(body: DownloadRequest, _: str = Depends(verify_credentials)):
     buf = io.BytesIO()
     save_docx(buf, body.name, body.sku, body.product_summary, body.sections)
     buf.seek(0)
-    safe_sku = body.sku.replace("/", "-")
+    safe_sku = _safe_filename(body.sku)
     return Response(
         content=buf.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -188,14 +243,11 @@ def download_doc(body: DownloadRequest, _: str = Depends(verify_credentials)):
     )
 
 
-class BatchRequestFull(BaseModel):
-    items: list[BatchItem]
-
-
 @app.post("/api/batch")
 def batch(body: BatchRequestFull, _: str = Depends(verify_credentials)):
     results = []
     errors = []
+
     for item in body.items:
         try:
             matches = search_products(
@@ -217,8 +269,9 @@ def batch(body: BatchRequestFull, _: str = Depends(verify_credentials)):
             raw = call_claude(sku, summary, _resources["claude"], _resources["brand_voice"])
             sections = parse_sections(raw)
             results.append({"sku": sku, "name": name, "summary": summary, "sections": sections})
-        except Exception as e:
-            errors.append({"query": item.query, "error": str(e)})
+        except Exception:
+            logger.exception("Batch item failed for query: %s", item.query)
+            errors.append({"query": item.query, "error": "Processing failed — check server logs"})
 
     # Build zip
     zip_buf = io.BytesIO()
@@ -227,7 +280,7 @@ def batch(body: BatchRequestFull, _: str = Depends(verify_credentials)):
             doc_buf = io.BytesIO()
             save_docx(doc_buf, r["name"], r["sku"], r["summary"], r["sections"])
             doc_buf.seek(0)
-            safe_sku = r["sku"].replace("/", "-")
+            safe_sku = _safe_filename(r["sku"])
             zf.writestr(f"content_{safe_sku}.docx", doc_buf.getvalue())
     zip_buf.seek(0)
 

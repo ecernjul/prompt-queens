@@ -39,18 +39,22 @@ export default function App() {
   const [selectedProduct, setSelectedProduct] = useState<ProductResult | null>(null);
   const [sections, setSections] = useState<Sections | null>(null);
   const [sectionKeys, setSectionKeys] = useState<string[]>([]);
+  // product_summary is returned by the server after generation (not trusted from client)
+  const [serverSummary, setServerSummary] = useState<string>("");
 
   /* -- Handlers -------------------------------------------------------- */
   const handleProductSelected = useCallback((p: ProductResult) => {
     setSelectedProduct(p);
     setSections(null);
     setSectionKeys([]);
+    setServerSummary("");
     setView("generate");
   }, []);
 
-  const handleContentGenerated = useCallback((s: Sections, keys: string[]) => {
+  const handleContentGenerated = useCallback((s: Sections, keys: string[], summary: string) => {
     setSections(s);
     setSectionKeys(keys);
+    setServerSummary(summary);
     setView("content");
   }, []);
 
@@ -117,6 +121,7 @@ export default function App() {
               product={selectedProduct!}
               sections={sections}
               sectionKeys={sectionKeys}
+              productSummary={serverSummary}
               onBack={() => setView("generate")}
             />
           )}

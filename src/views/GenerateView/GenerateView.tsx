@@ -5,7 +5,7 @@ import styles from "./GenerateView.module.css";
 
 interface Props {
   product: ProductResult | null;
-  onContentGenerated: (sections: Sections, sectionKeys: string[]) => void;
+  onContentGenerated: (sections: Sections, sectionKeys: string[], summary: string) => void;
   onBack: () => void;
 }
 
@@ -29,8 +29,8 @@ export function GenerateView({ product, onContentGenerated, onBack }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const result = await generateContent(product.sku, product.summary);
-      onContentGenerated(result.sections, result.section_keys);
+      const result = await generateContent(product.sku);
+      onContentGenerated(result.sections, result.section_keys, result.product_summary);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
     } finally {
