@@ -273,12 +273,10 @@ async def generate_image(body: ImageRequest, _: str = Depends(verify_credentials
             body.product_image_url,
         )
         return {"image_url": image_url}
-    except ValueError as e:
-        # HIGGSFIELD_API_KEY not configured
-        raise HTTPException(status_code=503, detail=str(e))
-    except Exception:
+    except Exception as e:
+        # Temporarily exposing full error for debugging — remove once image gen is stable
         logger.exception("Image generation failed for concept: %s", body.concept_title)
-        raise HTTPException(status_code=502, detail="Image generation failed — check server logs")
+        raise HTTPException(status_code=502, detail=f"Image generation failed: {e}")
 
 
 @app.post("/api/batch")
